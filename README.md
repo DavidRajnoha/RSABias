@@ -37,7 +37,7 @@ From the repository root, you can try to classify [the example key](https://gith
 rsabias -a classify -i rsabias/model/sample_private_key.pem -o .
 ```
 
-where `-i` parameter denotes a path to the RSA private key in DER or PEM format, and `-o` parameter denotes a path to the folder where the classification report will be stored. Consequently, running the command above should print basic information to the standard output:
+where `-i` parameter denotes a path to the RSA private key in PEM format, and `-o` parameter denotes a path to the folder where the classification report will be stored. Consequently, running the command above should print basic information to the standard output:
 
 ```bash
 Your key with sha-256 digest: e10d8b68b1e2b595f69813a99524d9dce0c0f80b092f9466d80b587f587262ba gets classified as:
@@ -45,7 +45,7 @@ Your key with sha-256 digest: e10d8b68b1e2b595f69813a99524d9dce0c0f80b092f9466d8
 	- Score: 0.023450350877192983
 	- If a key is marked as coming from Group 24, the model is in 90.21% cases right.
 	- The model correctly classifies 96.83% keys that are actually from Group 24.
-	- This group contains the following sources:
+	- This group contains the following sources (and your key therefore probably originates from):
 		* Library OpenSSL 1.0.2g 2.0.12 fips 1024
 		* Library OpenSSL 1.0.2g 2.0.12 fips 2048
 		* Library OpenSSL 1.0.2g 2.0.12 fips 512
@@ -66,18 +66,46 @@ Your key with sha-256 digest: e10d8b68b1e2b595f69813a99524d9dce0c0f80b092f9466d8
 
 The full report at `./key_classification.json` then contains similar information for all groups. At the bottom of the report, one can usually see so-called impossible groups. Such groups from our experience cannot generate the examined key. At the very top, the most probable groups are listed.
 
+#### Supported key formats
+
+The key file must hold exactly one RSA **private** key, **without a passphrase**, in **PEM** format. The classifier needs the primes `p` and `q`, so public keys and certificates cannot be classified.
+
+| Key file | Header | Supported |
+|---|---|---|
+| PKCS#1 PEM | `-----BEGIN RSA PRIVATE KEY-----` | Yes |
+| PKCS#8 PEM | `-----BEGIN PRIVATE KEY-----` | Yes |
+| DER (binary, PKCS#1 or PKCS#8) | – | No, the file is read as text and fails with `Failed to read key-data from file, 'utf-8' codec can't decode byte ...` |
+| Passphrase-protected PEM | `Proc-Type: 4,ENCRYPTED` or `-----BEGIN ENCRYPTED PRIVATE KEY-----` | No, fails with `Failed to build a key object from the key, RSA key format is not supported.` |
+| Public key | `-----BEGIN PUBLIC KEY-----` | No, fails with `Failed to build a key object from the key, No CRT component 'p' available for public keys.` |
+| OpenSSH | `-----BEGIN OPENSSH PRIVATE KEY-----` | Do not use, see below |
+
+An OpenSSH private key is parsed without an error, but `p` and `q` come out swapped compared with the PEM encoding of the same key. The features treat `p` and `q` differently, so the key can end up in a different group (the example key above falls into group 6 instead of group 24). Convert such keys to PEM before classifying them.
+
+Keys in other encodings can be converted with OpenSSL or OpenSSH:
+
+```bash
+openssl rsa -inform DER -in key.der -out key.pem        # DER -> PEM
+openssl rsa -in encrypted.pem -out key.pem              # remove the passphrase
+cp id_rsa key.pem && ssh-keygen -p -m PEM -N "" -f key.pem   # OpenSSH -> PEM (rewrites the copy in place)
+```
+
+The printed sha-256 digest is computed from the contents of the key file, not from the key itself. The same key stored as PKCS#1 and as PKCS#8 therefore gets two different digests.
+
+Only one key is classified per invocation. The `evaluate` task cannot currently be used to classify an unlabelled set of your own keys, see below.
+
 ### Advanced usage
 
 A bunch of distinct tasks is available for full analysis of the RSA keys. This section of the readme is not meant to be self-contained, but rather provide guidance. The user will most probably need to dive into the code when aiming for the replication of the experiment. A list of available tasks with short description follows (with the assumption that the user is acknowledged with our paper). The exact list of expected parameters for each of the tasks can be simply read out from the [cli.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/cli.py). The tasks are presented in the order that leads to experiment replication.
 
 - `convert` -  Since we internally support multiple formats of the datasets, this task is capable of converting between the formats (csv -> json, enabling compression, etc.)
-- `dist+plot` - Computes the exact distribution of the selected features on a whole dataset. Out of these features, labels for the dataset are constructed. This task also plots a dendrogram of the classes, showing how similar/distant the keys from the respective sources are.
+- `dist+plot` - Computes the exact distribution of the selected features on a whole dataset. Out of these features, labels for the dataset are constructed. This task also plots a dendrogram of the classes, showing how similar/distant the keys from the respective sources are. The two halves are also available separately as `dist` and `plot`.
 - `group` - Performs the clustering task, using the distributions of the features as an input.
+- `marginal` - Computes marginal distributions of the features over the subspaces given by `-s`.
 - `split` - Splits the dataset into training and test part. Out of each source, at least 10 000 keys are taken into the test set as default.
 - `filter` - Prepares the test dataset. This task shuffles and merges the keys into a single artificially created dataset, that can be fed into the tasks below.
-- `build` - Based on a list of transformations, groups obtained from clustering, and a dataset, this task constructs the classification tables. Three Bayes classifiers can be selected: naive, complex, and cross-feature classifier. See Section 3 of the paper for more information.
-- `evaluate` - Evaluates the classifier on a dataset of keys. Produces several json files with the model performance report (if the labels are available).
-- `batch_gcd` - Builds specific classification tables for the GCD-factorable dataset (that only uses a single prime) and directly uses them to classify the whole dataset.
+- `build` - Based on a list of transformations, groups obtained from clustering, and a dataset, this task constructs the classification tables. The CLI lets you select the naive or the complex Bayes classifier (`-m naive` or `-m complex`). The cross-feature classifier from the paper cannot be selected from the CLI. See Section 3 of the paper for more information.
+- `evaluate` - Evaluates the classifier on a labelled dataset of keys and writes the model performance report as several json files. Every source in the input must be listed in the groups file (`-g`). Unlabelled datasets are not supported: the `-l` flag is accepted but ignored.
+- `batch_gcd` - Classifies the GCD-factorable dataset (which only has a single prime per key) using existing classification tables. Before running it, replace the placeholder path `see/comment/above` in `Evaluator.init_batch_dictionary` ([classifier.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/core/classifier.py)) with the path to the dataset file.
 - `visualize` - To-be-called after the `evaluate` task. Takes the model performance results and prints them into a table. More info at [classification_table_template](https://github.com/crocs-muni/RSABias/tree/master/rsabias/classification_table_template).
 - `classify` - Used to classify a single key. This is the main task that was already described above.
 
@@ -93,13 +121,13 @@ The parameters of the tasks are:
 - `-t` or `--trans`: path to the file with transformations, see [model](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model#transformations-description) for more information.
 - `-i` or `--inp`: path to the input, whatever the task needs.
 - `-o` or `--out`: path to the output, whatever the task produces.
-- `-f` or `--format`: format of the dataset (csv, json).
+- `-f` or `--format`: output format of the dataset for `convert`, `split` and `filter` (csv or json, default json).
 - `-g` or `--groups`: path to the file with groups, see [model](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model#groups-description) for more information.
-- `-d` or `--decompress`: whether to compress the dataset or not.
-- `-s` or `--subspaces`: Subspaces for the clustering task.
-- `-c` or `--classtable`: path to the classification table.
-- `-m` or `--method`: What model to use. naive bayess or complex Bayess.
-- `-l` or `--labels`: Whether the labels for the dataset are at hand, used for evaluation of the model performance.
+- `-d` or `--decompress`: make `convert` and `split` write the output dataset uncompressed. Their output is gzip-compressed by default.
+- `-s` or `--subspaces`: Subspaces for the `marginal` task.
+- `-c` or `--classtable`: path to the **directory** with the classification tables (e.g. `rsabias/model`). `evaluate` loads `classification_table_naive.pkl` or `classification_table_complex.pkl` from it according to `-m`. `batch_gcd` always loads `classification_table_complex.pkl`.
+- `-m` or `--method`: which model to use, `complex` (default) or `naive` Bayes.
+- `-l` or `--labels`: currently has no effect, see `evaluate` above.
 - `-p` or `--prime_wise`: Whether single-prime model should be used, for gcd-factorized key classification.
 - `-r` or `--remove_duplicities`: Whether duplicate keys should be deleted from a dataset.
 
@@ -111,7 +139,7 @@ To summarize, in order to fully replicate our experiments, one must do:
 4. Split and filter the dataset into training and test part. (`split` and `filter` tasks)
 5. Build the model. (`build` task)
 6. Evaluate the performance of the model. (`evaluate` task)
-7. Possibly classify the [batch-gcd dataset](https://github.com/crocs-muni/RSABias/tree/master/datasets/BatchGCD-primes-only). (`batch-gcd` task)
+7. Possibly classify the [batch-gcd dataset](https://github.com/crocs-muni/RSABias/tree/master/datasets/BatchGCD-primes-only). (`batch_gcd` task)
 8. Possibly visualize the model performance. (`visualize` task)
 
 We present a further description of the utilized data structures (groups, features, ...) in the [model folder](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model).
