@@ -586,7 +586,8 @@ def cluster(data_sets_path, output_path, trans_path):
     groups = table.Table.group(metas, dists, trans, out_path=output_path)
     labels = [' '.join(m.source()) for m in metas]
     grouping = dict()
-    for l, g in zip(labels, groups):
+    # fcluster returns numpy integers, which json cannot use as keys
+    for l, g in zip(labels, map(str, groups)):
         if g not in grouping:
             grouping[g] = []
         grouping[g].append(l)
