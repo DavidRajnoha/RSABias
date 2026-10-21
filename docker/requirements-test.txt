@@ -1,2 +1,0 @@
-# Test tooling for the reference image. 7.4.x is the last pytest supporting Python 3.7.
-pytest==7.4.4

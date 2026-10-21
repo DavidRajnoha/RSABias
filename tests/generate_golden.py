@@ -1,7 +1,9 @@
 """
 Records the golden outputs the tests compare against. Run it only in the legacy reference image, whose outputs are
-the ground truth for later dependency upgrades:
+the ground truth for later dependency upgrades. Current code no longer runs on its Python 3.7, so run it in a checkout
+of the tag esorics2020-env (see README) and copy tests/data and tests/golden over:
 
+    git worktree add ../rsabias-legacy esorics2020-env && cd ../rsabias-legacy
     docker run --rm -v "$PWD:/opt/rsabias" --entrypoint python rsabias:legacy tests/generate_golden.py
 
 Models are read from the original pickles, not from the converted .npz files, so the golden outputs come from the

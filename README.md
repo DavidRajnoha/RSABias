@@ -20,10 +20,10 @@ For development, [uv](https://docs.astral.sh/uv/) installs the exact dependency 
 
 ### Legacy environment (ESORICS 2020)
 
-The original environment of the paper (Python 3.7, dependency versions from 2020) is available as a Docker image, used as the reference for the regression tests in `tests/`:
+The original environment of the paper (Python 3.7, dependency versions from 2020) is available as a Docker image. It produced the golden outputs the regression tests in `tests/` compare against. The current code requires a newer Python, so the image is built from the tag `esorics2020-env`, the last commit that runs in it:
 
 ```
-docker build -t rsabias:legacy .
+git archive esorics2020-env | docker build -t rsabias:legacy --build-arg VCS_REF=esorics2020-env -
 docker run --rm -v "$PWD/out:/out" rsabias:legacy -a classify -i rsabias/model/sample_private_key.pem -o /out
 ```
 

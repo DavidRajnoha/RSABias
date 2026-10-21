@@ -11,7 +11,8 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Matus Nemec", email = "mnemec@mail.muni.cz" }]
 requires-python = ">=3.11"
-# Direct imports only. Lower bounds are the first releases with Python 3.11 wheels.
+# Direct imports only. Lower bounds are the first releases with Python 3.11 wheels; the test suite passes with
+# them on Python 3.11 (uv pip install --resolution lowest-direct).
 dependencies = [
     "matplotlib>=3.7",
     "numpy>=1.24",

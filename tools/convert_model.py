@@ -1,6 +1,6 @@
 """
 Converts a pickled classification table (legacy model format) into the pickle-free .npz format and verifies that
-every cell round-trips exactly. Must run in the environment that wrote the pickle (see Dockerfile), as the pickle
+every cell round-trips exactly. Must run in the environment that wrote the pickle (legacy image, see README), as the pickle
 references numpy/pandas/xarray internals of that time.
 
 Usage: python tools/convert_model.py <classification_table.pkl> <groups.json>
