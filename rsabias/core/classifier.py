@@ -79,6 +79,16 @@ def load_classification_table(filepath):
         return xr.DataArray(data['probabilities'], coords=coords, dims=dims + ['group'], name=str(data['name']))
 
 
+def fix_legacy_feature_names(table):
+    """
+    Tables built before the feature names were fixed label the Blum feature 'modularFingerprint' and the modular
+    fingerprint 'lsb'. Detect them by the boolean coordinates of 'modularFingerprint' and swap the names back.
+    """
+    if 'modularFingerprint' not in table.dims or table.coords['modularFingerprint'].dtype != bool:
+        return table
+    return table.rename({'modularFingerprint': '_lsb'}).rename({'lsb': 'modularFingerprint'}).rename({'_lsb': 'lsb'})
+
+
 def resolve_table_path(filepath):
     """
     Classification tables are stored as .npz; legacy models only have a pickle (.pkl) next to it. Return whichever
@@ -518,8 +528,11 @@ class ProbaTable:
     @staticmethod
     def get_feature_names():
         # TODO: Not going to lie, the names of the features must be specified manually in the code.
-        # return ['msb5', 'modularFingerprint', 'lsb', 'roca'] # This is for Cross feature method
-        return ['msb5p', 'msb5q', 'modularFingerprint', 'lsb', 'roca']  # This is for complex and naive method
+        # Aligned with get_trans_ranges: 'lsb' is the Blum test on the second least significant bits (boolean),
+        # 'modularFingerprint' the small factors of p-1/q-1. Tables built before this order was fixed have the two
+        # names swapped, see fix_legacy_feature_names.
+        # return ['msb5', 'lsb', 'modularFingerprint', 'roca'] # This is for Cross feature method
+        return ['msb5p', 'msb5q', 'lsb', 'modularFingerprint', 'roca']  # This is for complex and naive method
 
     def load_classification_tables(self, filepath, method):
         filepath = resolve_table_path(filepath)
@@ -531,6 +544,7 @@ class ProbaTable:
                                           .format(table_groups, list(self.groups_unique_sorted)))
         else:
             table = load_object_pickle(filepath)
+        table = fix_legacy_feature_names(table)
         if method == 'naive':
             self.classification_table_naive = table
         else:

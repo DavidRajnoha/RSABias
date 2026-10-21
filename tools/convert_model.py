@@ -16,7 +16,7 @@ from rsabias.core import classifier
 
 def main(pkl_path, groups_json_path):
     groups = classifier.ProbaTable.get_list_of_unique_groups(groups_json_path)
-    legacy = classifier.load_object_pickle(pkl_path)
+    legacy = classifier.fix_legacy_feature_names(classifier.load_object_pickle(pkl_path))
     npz_path = os.path.splitext(pkl_path)[0] + '.npz'
     classifier.save_classification_table(legacy, groups, npz_path)
 

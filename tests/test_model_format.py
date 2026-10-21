@@ -31,13 +31,32 @@ def test_model_groups_match_groups_file():
 
 
 def test_npz_identical_to_legacy_pickle():
-    legacy = load_legacy_pickle()
+    legacy = classifier.fix_legacy_feature_names(load_legacy_pickle())
     converted = classifier.load_classification_table(MODEL_NPZ)
     for d in legacy.dims:
         assert np.array_equal(legacy.coords[d].values, converted.coords[d].values), d
     expected = np.array([ast.literal_eval(c) for c in legacy.values.ravel()], dtype=np.float64)
     actual = converted.transpose(*(list(legacy.dims) + ['group'])).values.reshape(expected.shape)
     assert np.array_equal(actual, expected)
+
+
+def test_model_feature_names():
+    """'lsb' is the boolean Blum feature, 'modularFingerprint' the small factor bound, as computed by the features."""
+    table = classifier.load_classification_table(MODEL_NPZ)
+    assert list(table.dims) == classifier.ProbaTable.get_feature_names() + ['group']
+    assert list(table.coords['lsb'].values) == [False, True]
+    assert list(table.coords['modularFingerprint'].values) == [1, 5, 251, 17863]
+
+
+def test_legacy_feature_names_fixed_on_load():
+    """Golden tables were built by the legacy code, with 'lsb' and 'modularFingerprint' swapped."""
+    golden = os.path.join(pipeline.GOLDEN, 'tables', 'classification_table_complex.npz')
+    assert classifier.load_classification_table(golden).dims[2:4] == ('modularFingerprint', 'lsb')
+    table = classifier.ProbaTable(pipeline.TRANS, pipeline.BABY_GROUPS, 'complex')
+    table.init_common_structures()
+    table.load_classification_tables(golden, 'complex')
+    assert list(table.classification_table_complex.dims) == classifier.ProbaTable.get_feature_names() + ['group']
+    assert list(table.classification_table_complex.coords['lsb'].values) == [False, True]
 
 
 def test_classification_tables_do_not_share_data():

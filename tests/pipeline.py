@@ -126,8 +126,9 @@ def assert_json_close(actual, expected, rel=1e-12, path='$'):
 
 
 def assert_tables_close(actual_path, expected_path, rel=1e-12):
-    actual = classifier.load_classification_table(actual_path)
-    expected = classifier.load_classification_table(expected_path)
+    """Golden tables come from the legacy code and carry its swapped feature names."""
+    actual = classifier.fix_legacy_feature_names(classifier.load_classification_table(actual_path))
+    expected = classifier.fix_legacy_feature_names(classifier.load_classification_table(expected_path))
     assert actual.dims == expected.dims
     for d in expected.dims:
         assert np.array_equal(actual.coords[d].values, expected.coords[d].values), d
