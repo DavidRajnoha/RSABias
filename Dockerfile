@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libgmp-dev libmpfr-dev libmpc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY docker/requirements-esorics2020.txt /tmp/requirements.txt
-RUN pip wheel --no-cache-dir -w /wheels -r /tmp/requirements.txt
+COPY docker/requirements-esorics2020.txt docker/requirements-test.txt /tmp/
+RUN pip wheel --no-cache-dir -w /wheels -r /tmp/requirements-esorics2020.txt -r /tmp/requirements-test.txt
 
 
 FROM ${PYTHON_IMAGE}
@@ -36,8 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels
-COPY docker/requirements-esorics2020.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir --no-index --find-links /wheels -r /tmp/requirements.txt \
+COPY docker/requirements-esorics2020.txt docker/requirements-test.txt /tmp/
+RUN pip install --no-cache-dir --no-index --find-links /wheels \
+        -r /tmp/requirements-esorics2020.txt -r /tmp/requirements-test.txt \
     && rm -rf /wheels
 
 WORKDIR /opt/rsabias

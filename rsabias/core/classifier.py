@@ -45,6 +45,51 @@ def load_object_pickle(filepath):
     return obj
 
 
+def save_classification_table(table, groups, filepath):
+    """
+    Save classification table into filepath as .npz with plain arrays only, so that it loads regardless of the
+    numpy/pandas/xarray versions (unlike pickle). Legacy tables hold str(list) of per-group probabilities in each cell,
+    aligned with groups. Probabilities are stored as float64 with the group axis last.
+    """
+    feature_dims = [d for d in table.dims if d != 'group']
+    if 'group' in table.dims:
+        probabilities = table.transpose(*(feature_dims + ['group'])).values.astype(np.float64)
+    else:
+        cells = table.values
+        probabilities = np.array([ast.literal_eval(c) for c in cells.ravel()], dtype=np.float64)
+        probabilities = probabilities.reshape(cells.shape + (len(groups),))
+    arrays = {'probabilities': probabilities,
+              'dims': np.array(feature_dims),
+              'groups': np.array([str(g) for g in groups]),
+              'name': np.array(table.name or '')}
+    for d in feature_dims:
+        arrays['coord_' + d] = np.asarray(table.coords[d].values)
+    np.savez_compressed(filepath, **arrays)
+
+
+def load_classification_table(filepath):
+    """
+    Load classification table stored by save_classification_table. The returned DataArray has the feature dimensions
+    followed by 'group'.
+    """
+    with np.load(filepath, allow_pickle=False) as data:
+        dims = [str(d) for d in data['dims']]
+        coords = {d: data['coord_' + d] for d in dims}
+        coords['group'] = [str(g) for g in data['groups']]
+        return xr.DataArray(data['probabilities'], coords=coords, dims=dims + ['group'], name=str(data['name']))
+
+
+def resolve_table_path(filepath):
+    """
+    Classification tables are stored as .npz; legacy models only have a pickle (.pkl) next to it. Return whichever
+    exists, preferring .npz, regardless of the extension in filepath.
+    """
+    base = os.path.splitext(filepath)[0]
+    if os.path.exists(base + '.npz'):
+        return base + '.npz'
+    return base + '.pkl'
+
+
 def trans_from_path(trans_path):
     """
     Returns transformations as json object from path with the transformations.
@@ -339,8 +384,10 @@ class Classifier:
     def classify(self, key):
         features = self.proba_table.trans.apply(key)
         dct = {key: val for key, val in zip(self.proba_table.dims[1:], features)}
-        data = self.table_to_look_at.loc[dct].data.flatten()[0]
-        return ast.literal_eval(data)
+        cell = self.table_to_look_at.loc[dct]
+        if 'group' in cell.dims:
+            return cell.values.tolist()
+        return ast.literal_eval(cell.data.flatten()[0])
 
 
 class ProbaTable:
@@ -475,10 +522,19 @@ class ProbaTable:
         return ['msb5p', 'msb5q', 'modularFingerprint', 'lsb', 'roca']  # This is for complex and naive method
 
     def load_classification_tables(self, filepath, method):
-        if method == 'naive':
-            self.classification_table_naive = load_object_pickle(filepath)
+        filepath = resolve_table_path(filepath)
+        if filepath.endswith('.npz'):
+            table = load_classification_table(filepath)
+            table_groups = list(table.coords['group'].values)
+            if table_groups != list(self.groups_unique_sorted):
+                raise ProbaTableException('Groups of the classification table {} do not match the groups file {}'
+                                          .format(table_groups, list(self.groups_unique_sorted)))
         else:
-            self.classification_table_complex = load_object_pickle(filepath)
+            table = load_object_pickle(filepath)
+        if method == 'naive':
+            self.classification_table_naive = table
+        else:
+            self.classification_table_complex = table
 
     def build_classification_table(self, data_set_path, filepath_to_store_naive_table=None, filepath_to_store_complex_table=None):
         print('Initializing tables precomputation')
@@ -590,6 +646,8 @@ class ProbaTable:
 
         if filepath is not None:
             save_object_pickle(self.classification_table_complex, filepath)
+            save_classification_table(self.classification_table_complex, self.groups_unique_sorted,
+                                      os.path.splitext(filepath)[0] + '.npz')
 
     def fill_classification_table_naive(self, filepath=None):
         """
@@ -615,3 +673,5 @@ class ProbaTable:
         print(f'Filling Classification table took {end - start} seconds.')
         if filepath is not None:
             save_object_pickle(self.classification_table_naive, filepath)
+            save_classification_table(self.classification_table_naive, self.groups_unique_sorted,
+                                      os.path.splitext(filepath)[0] + '.npz')
