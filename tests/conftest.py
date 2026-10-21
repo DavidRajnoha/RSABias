@@ -1,10 +1,14 @@
 import os
+import sys
 
 os.environ.setdefault('MPLBACKEND', 'Agg')
 
 import pytest  # noqa: E402
 
 import pipeline  # noqa: E402
+
+# rsa_fingerprint.py and roca.py are standalone scripts in the repository root
+sys.path.insert(0, pipeline.REPO)
 
 
 @pytest.fixture(scope='session')
