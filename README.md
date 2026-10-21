@@ -6,14 +6,25 @@ Using this project, you can audit the origin of your RSA private key. Also, it i
 
 ## Install
 
-The code is tested on Python 3.6. It should suffice to clone and install using the setup script. Note that since the stable part of the code is tied to the experimental part, this package is not distributed as a pip package. Also, note that the required gmpy2 package has some [install requirements](https://gmpy2.readthedocs.io/en/latest/intro.html#installation). The full chain of commands is:
+The tool requires Python 3.11 or newer. Since the stable part of the code is tied to the experimental part, this package is not distributed on PyPI; install it from a clone:
 
 ```
 git clone git@github.com:crocs-muni/RSABias.git &&
 cd RSABias &&
 python3 -m venv venv &&
 source venv/bin/activate &&
-python3 ./setup.py install
+pip install .
+```
+
+For development, [uv](https://docs.astral.sh/uv/) installs the exact dependency versions from `uv.lock` together with the test tools: `uv sync`, then `uv run pytest` (add `-m "not slow"` to skip the model-building tests).
+
+### Legacy environment (ESORICS 2020)
+
+The original environment of the paper (Python 3.7, dependency versions from 2020) is available as a Docker image, used as the reference for the regression tests in `tests/`:
+
+```
+docker build -t rsabias:legacy .
+docker run --rm -v "$PWD/out:/out" rsabias:legacy -a classify -i rsabias/model/sample_private_key.pem -o /out
 ```
 
 ## Usage

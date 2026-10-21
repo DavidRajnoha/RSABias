@@ -43,9 +43,8 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
 
 WORKDIR /opt/rsabias
 COPY . .
-# Run from the source tree rather than installing: setup.py pins the bumped
-# numpy/scipy, which the generated console script would insist on, and
-# MANIFEST.in does not package every model file (e.g. distributions/).
+# Run from the source tree rather than installing: pyproject.toml targets
+# Python >= 3.11 and current dependency versions, not this environment.
 ENV PYTHONPATH=/opt/rsabias \
     MPLBACKEND=Agg
 ENTRYPOINT ["python", "-m", "rsabias.cli"]
