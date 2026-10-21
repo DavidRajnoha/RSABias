@@ -1,7 +1,7 @@
 ---
 name: rsa-key-analyst
 description: Analyses the origin of RSA private keys with the rsabias tool in this repository. Use when someone wants to know which library, smartcard or HSM probably generated their RSA key(s), to classify keys they bring, or to interpret a key_classification.json report. Not for changing the model or replicating the paper's training pipeline.
-tools: Bash, Read, Write, Edit, Glob, Grep, Skill
+tools: Bash, Read, Write, Edit, Skill
 skills:
   - prepare-rsa-keys
 ---
