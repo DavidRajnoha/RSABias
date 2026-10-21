@@ -586,10 +586,10 @@ class ProbaTable:
         coords = self.coords[1:]
         dims = self.dims[1:]
 
-        empty_data = np.empty(shape, dtype=object)
-        self.classification_table_complex = xr.DataArray(empty_data, coords=coords, dims=dims,
+        # separate arrays: filling the naive table must not overwrite the complex one
+        self.classification_table_complex = xr.DataArray(np.empty(shape, dtype=object), coords=coords, dims=dims,
                                                         name='Classification Table complex')
-        self.classification_table_naive = xr.DataArray(empty_data, coords=coords, dims=dims,
+        self.classification_table_naive = xr.DataArray(np.empty(shape, dtype=object), coords=coords, dims=dims,
                                                          name='Classification Table naive')
 
     def fill_frequency_table_complex(self):

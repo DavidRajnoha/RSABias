@@ -40,6 +40,16 @@ def test_npz_identical_to_legacy_pickle():
     assert np.array_equal(actual, expected)
 
 
+def test_classification_tables_do_not_share_data():
+    """Filling the naive table during build must not overwrite the complex one."""
+    table = classifier.ProbaTable(pipeline.TRANS, pipeline.GROUPS, 'complex')
+    table.init_common_structures()
+    table.init_data_array_classification_tables()
+    cell = dict(zip(table.feature_names, (0, 0, False, 1, False)))
+    table.classification_table_naive.loc[cell] = 'naive'
+    assert table.classification_table_complex.loc[cell].item() is None
+
+
 def test_save_load_round_trip(tmp_path):
     table = classifier.load_classification_table(MODEL_NPZ)
     path = str(tmp_path / 'table.npz')
