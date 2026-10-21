@@ -16,7 +16,22 @@ source venv/bin/activate &&
 pip install .
 ```
 
-For development, [uv](https://docs.astral.sh/uv/) installs the exact dependency versions from `uv.lock` together with the test tools: `uv sync`, then `uv run pytest` (add `-m "not slow"` to skip the model-building tests).
+### Docker
+
+The image contains the tool with the exact dependency versions from `uv.lock` and the model. Mount the directory with your keys as `/work`, the working directory of the image; outputs are written there too:
+
+```
+docker build -t rsabias --build-arg VCS_REF=$(git rev-parse --short HEAD) .
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" rsabias -a classify -i key.pem -o .
+```
+
+`--user` makes the container read and write the mounted files as you; without it, it runs as UID 1000.
+
+### Development and tests
+
+[uv](https://docs.astral.sh/uv/) installs the exact dependency versions from `uv.lock` together with the test tools: `uv sync`, then `uv run pytest` (add `-m "not slow"` to skip the model-building tests, which take a few minutes).
+
+The tests compare the tasks (`classify`, `dist`, `group`, `build`, `evaluate`) on the keys in `tests/data` and the [baby dataset](datasets/baby_dataset) against golden outputs in `tests/golden`, recorded in the legacy environment of the paper (below). They therefore check that the current dependencies reproduce the original results.
 
 ### Legacy environment (ESORICS 2020)
 
@@ -75,7 +90,7 @@ The key file must hold exactly one RSA **private** key, **without a passphrase**
 | PKCS#1 PEM | `-----BEGIN RSA PRIVATE KEY-----` | Yes |
 | PKCS#8 PEM | `-----BEGIN PRIVATE KEY-----` | Yes |
 | DER (binary, PKCS#1 or PKCS#8) | – | No, the file is read as text and fails with `Failed to read key-data from file, 'utf-8' codec can't decode byte ...` |
-| Passphrase-protected PEM | `Proc-Type: 4,ENCRYPTED` or `-----BEGIN ENCRYPTED PRIVATE KEY-----` | No, fails with `Failed to build a key object from the key, RSA key format is not supported.` |
+| Passphrase-protected PEM | `Proc-Type: 4,ENCRYPTED` or `-----BEGIN ENCRYPTED PRIVATE KEY-----` | No, fails with `Failed to build a key object from the key, The private key is encrypted: a passphrase is required.` |
 | Public key | `-----BEGIN PUBLIC KEY-----` | No, fails with `Failed to build a key object from the key, No CRT component 'p' available for public keys.` |
 | OpenSSH | `-----BEGIN OPENSSH PRIVATE KEY-----` | Do not use, see below |
 
@@ -98,14 +113,14 @@ Only one key is classified per invocation. The `evaluate` task cannot currently 
 A bunch of distinct tasks is available for full analysis of the RSA keys. This section of the readme is not meant to be self-contained, but rather provide guidance. The user will most probably need to dive into the code when aiming for the replication of the experiment. A list of available tasks with short description follows (with the assumption that the user is acknowledged with our paper). The exact list of expected parameters for each of the tasks can be simply read out from the [cli.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/cli.py). The tasks are presented in the order that leads to experiment replication.
 
 - `convert` -  Since we internally support multiple formats of the datasets, this task is capable of converting between the formats (csv -> json, enabling compression, etc.)
-- `dist+plot` - Computes the exact distribution of the selected features on a whole dataset. Out of these features, labels for the dataset are constructed. This task also plots a dendrogram of the classes, showing how similar/distant the keys from the respective sources are. The two halves are also available separately as `dist` and `plot`.
-- `group` - Performs the clustering task, using the distributions of the features as an input.
+- `dist+plot` - Computes the exact distribution of the selected features on a whole dataset (a `dist.json` per source). Out of these features, labels for the dataset are constructed. This task also plots heat maps of the distributions, for sources whose observed feature values are few enough to draw. The two halves are also available separately as `dist` and `plot`.
+- `group` - Performs the clustering task, using the distributions of the features as an input. Prints the groups as JSON and saves a dendrogram of the sources, showing how similar/distant the keys from the respective sources are. With a display, the dendrogram opens in a window, where a click sets the clustering threshold; without one (e.g. in Docker), the default threshold 0.1 is used, which reproduces [groups.json](rsabias/model/groups/groups.json).
 - `marginal` - Computes marginal distributions of the features over the subspaces given by `-s`.
 - `split` - Splits the dataset into training and test part. Out of each source, at least 10 000 keys are taken into the test set as default.
 - `filter` - Prepares the test dataset. This task shuffles and merges the keys into a single artificially created dataset, that can be fed into the tasks below.
 - `build` - Based on a list of transformations, groups obtained from clustering, and a dataset, this task constructs the classification tables. The CLI lets you select the naive or the complex Bayes classifier (`-m naive` or `-m complex`). The cross-feature classifier from the paper cannot be selected from the CLI. See Section 3 of the paper for more information.
 - `evaluate` - Evaluates the classifier on a labelled dataset of keys and writes the model performance report as several json files. Every source in the input must be listed in the groups file (`-g`). Unlabelled datasets are not supported: the `-l` flag is accepted but ignored.
-- `batch_gcd` - Classifies the GCD-factorable dataset (which only has a single prime per key) using existing classification tables. Before running it, replace the placeholder path `see/comment/above` in `Evaluator.init_batch_dictionary` ([classifier.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/core/classifier.py)) with the path to the dataset file.
+- `batch_gcd` - Classifies the GCD-factorable dataset (which only has a single prime per key) using existing classification tables. Before running it, replace the placeholder path `see/comment/above` in `Evaluator.init_batch_dictionary` ([classifier.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/core/classifier.py)) with the path to the dataset file. It needs a classification table built for single primes, which is not in the repository, and `ProbaTable` currently hardcodes the feature ranges and names of `5p_5q_blum_mod_roca.json` (`get_trans_ranges`, `get_feature_names`), so building one requires adapting them to `prime_wise.json`.
 - `visualize` - To-be-called after the `evaluate` task. Takes the model performance results and prints them into a table. More info at [classification_table_template](https://github.com/crocs-muni/RSABias/tree/master/rsabias/classification_table_template).
 - `classify` - Used to classify a single key. This is the main task that was already described above.
 
@@ -125,7 +140,7 @@ The parameters of the tasks are:
 - `-g` or `--groups`: path to the file with groups, see [model](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model#groups-description) for more information.
 - `-d` or `--decompress`: make `convert` and `split` write the output dataset uncompressed. Their output is gzip-compressed by default.
 - `-s` or `--subspaces`: Subspaces for the `marginal` task.
-- `-c` or `--classtable`: path to the **directory** with the classification tables (e.g. `rsabias/model`). `evaluate` loads `classification_table_naive.pkl` or `classification_table_complex.pkl` from it according to `-m`. `batch_gcd` always loads `classification_table_complex.pkl`.
+- `-c` or `--classtable`: path to the **directory** with the classification tables (e.g. `rsabias/model`). `evaluate` loads `classification_table_naive` or `classification_table_complex` from it according to `-m`. `batch_gcd` always loads `classification_table_complex`. See [Model files](#model-files) for the file formats.
 - `-m` or `--method`: which model to use, `complex` (default) or `naive` Bayes.
 - `-l` or `--labels`: currently has no effect, see `evaluate` above.
 - `-p` or `--prime_wise`: Whether single-prime model should be used, for gcd-factorized key classification.
@@ -134,7 +149,7 @@ The parameters of the tasks are:
 To summarize, in order to fully replicate our experiments, one must do:
 
 1. Download our datasets (see below).
-2. Use our [feature vector](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model#5p_5q_blum_mod_rocajson) to count the distribution of the features on the whole dataset. (`dist+plot` task). The output of this task can be found at [model/distributions](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model/transformations) folder.
+2. Use our [feature vector](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model#5p_5q_blum_mod_rocajson) to count the distribution of the features on the whole dataset. (`dist+plot` task). The output of this task can be found at [model/distributions](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model/distributions) folder.
 3. Split the key sources into multiple groups with the help of automated clustering. (`group` task). The output of this task can be found at [model/groups](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model/groups) folder.
 4. Split and filter the dataset into training and test part. (`split` and `filter` tasks)
 5. Build the model. (`build` task)
@@ -143,6 +158,12 @@ To summarize, in order to fully replicate our experiments, one must do:
 8. Possibly visualize the model performance. (`visualize` task)
 
 We present a further description of the utilized data structures (groups, features, ...) in the [model folder](https://github.com/crocs-muni/RSABias/tree/master/rsabias/model).
+
+#### Model files
+
+Classification tables are stored as `.npz` files with plain arrays (probabilities per group, feature coordinates, group names), which load with any numpy version and without unpickling. The shipped model is [classification_table_complex.npz](rsabias/model/classification_table_complex.npz). `build` writes each table both as `.npz` and as a legacy `.pkl`; loading prefers the `.npz` and falls back to the `.pkl`.
+
+The original model of the paper, [classification_table_complex.pkl](rsabias/model/classification_table_complex.pkl), is a pickle that only loads with the dependency versions of 2020. It was converted losslessly with [tools/convert_model.py](tools/convert_model.py) in the legacy environment; convert your own pickled tables from that time the same way. Tables built before the feature names `lsb` and `modularFingerprint` were corrected are relabelled automatically on load.
 
 ## Dataset
 
@@ -178,7 +199,7 @@ If you would like to contribute, feel free to contact [Adam Janovsky](https://gi
 
 ## Authors
 
-[Adam Janovsky](https://github.com/adamjanovsky), [Matus Nemec](https://github.com/matusn), [Petr Svenda](https://github.com/petrs), [Peter Sekan](https://github.com/psekan) and [Vashek Matyas](matyas.cz); all from [Masaryk University](muni.cz), [Faculty of Informatics](fi.muni.cz), [Center for Research on Cryptography and Security](crocs.fi.muni.cz) in Czech Republic.
+[Adam Janovsky](https://github.com/adamjanovsky), [Matus Nemec](https://github.com/matusn), [Petr Svenda](https://github.com/petrs), [Peter Sekan](https://github.com/psekan) and [Vashek Matyas](https://matyas.cz); all from [Masaryk University](https://www.muni.cz), [Faculty of Informatics](https://www.fi.muni.cz), [Center for Research on Cryptography and Security](https://crocs.fi.muni.cz) in Czech Republic.
 
 ## License
 
