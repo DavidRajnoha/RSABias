@@ -108,6 +108,23 @@ The printed sha-256 digest is computed from the contents of the key file, not fr
 
 Only one key is classified per invocation. The `evaluate` task cannot currently be used to classify an unlabelled set of your own keys, see below.
 
+### Classifying a set of keys
+
+Keys that come from the same source can be classified together, which is much more reliable than a single key. Classify every key, then combine the reports with [tools/summarize_classification.py](tools/summarize_classification.py), which multiplies the scores of each group over all keys as `evaluate` does for batches:
+
+```bash
+for f in keys/*.pem; do n=$(basename "$f" .pem); mkdir -p "reports/$n"; rsabias -a classify -i "$f" -o "reports/$n"; done
+python tools/summarize_classification.py reports/*/key_classification.json
+```
+
+To use your own keys with the dataset tasks (`dist`, `group`, `build`, `evaluate`), pack them into a dataset with [tools/pem2dataset.py](tools/pem2dataset.py). It writes the keys and a `meta.json` with the source name and version; `--group` sets the group they are assumed to come from, which `evaluate` needs:
+
+```bash
+python tools/pem2dataset.py mykeys/openssl3 OpenSSL 3.5.3 keys/*.pem --group 24
+rsabias -a dist -i mykeys -o dist_out -t rsabias/model/transformations/5p_5q_blum_mod_roca.json
+rsabias -a evaluate -i mykeys -o eval_out -t rsabias/model/transformations/5p_5q_blum_mod_roca.json -g rsabias/model/groups/groups.json -c rsabias/model
+```
+
 ### Advanced usage
 
 A bunch of distinct tasks is available for full analysis of the RSA keys. This section of the readme is not meant to be self-contained, but rather provide guidance. The user will most probably need to dive into the code when aiming for the replication of the experiment. A list of available tasks with short description follows (with the assumption that the user is acknowledged with our paper). The exact list of expected parameters for each of the tasks can be simply read out from the [cli.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/cli.py). The tasks are presented in the order that leads to experiment replication.
