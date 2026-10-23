@@ -42,16 +42,17 @@ Use the `prepare-rsa-keys` skill. It converts any common encoding into one unenc
 
 ### 3. Run the classifier
 Find a working environment first:
-- `docker images rsabias` lists the legacy image (`rsabias:esorics2020`) if it has been built. Its entrypoint is `python -m rsabias.cli`. Mount the key directory read-only and a separate output directory.
-- Otherwise use an environment where `python -c "import rsabias.core.tasks"` works (installed per the README). A venv that is missing matplotlib or the other requirements fails at import.
+- An environment where `rsabias -h` works (installed per the README with `pip install .` or `uv sync`, Python 3.11+).
+- Otherwise the Docker image: `docker images rsabias` shows whether it has been built (`docker build -t rsabias .`). Its entrypoint is `rsabias`. Mount the key directory read-only and a separate output directory, run as your own user, and create the output directories on the host first: Docker creates missing ones owned by root and the tool then cannot write.
 
-Classify one key per run, with a **separate output directory per key**, because every run writes `key_classification.json` into `-o` and overwrites the previous one:
+Classify one key per run, with a **separate output directory per key**, because every run writes `key_classification.json` into `-o` and overwrites the previous one. The directory must exist:
 
 ```bash
 for k in "$PREP"/*.pem; do
     out="$REPORTS/$(basename "$k" .pem)"; mkdir -p "$out"
-    docker run --rm -v "$PREP:/in:ro" -v "$out:/out" rsabias:esorics2020 \
-        -a classify -i "/in/$(basename "$k")" -o /out > "$out/stdout.txt"
+    rsabias -a classify -i "$k" -o "$out" > "$out/stdout.txt"
+    # or: docker run --rm --user "$(id -u):$(id -g)" -v "$PREP:/in:ro" -v "$out:/out" rsabias \
+    #         -a classify -i "/in/$(basename "$k")" -o /out > "$out/stdout.txt"
 done
 ```
 
@@ -95,5 +96,5 @@ Don't overstate the result. "Most consistent with group 24 (OpenSSL 0.9.7–1.1.
 - `README.md`: usage, the supported key formats table, CLI parameters.
 - `rsabias/core/tasks.py`: `classify_key` is the single-key pipeline.
 - `rsabias/core/key.py`: `Key.import_standard_format` handles key parsing.
-- `rsabias/model/`: the model (`classification_table_complex.pkl`), `groups/groups.json`, `precision_recall.json`, `transformations/` and its `readme.md`.
+- `rsabias/model/`: the model (`classification_table_complex.npz`), `groups/groups.json`, `precision_recall.json`, `transformations/` and its `readme.md`.
 - `datasets/baby_dataset/`: small labelled sample keys from known sources, in the dataset's JSON-lines format. Useful as a sanity check. The prepare script reads these `.json.gz` files once decompressed.

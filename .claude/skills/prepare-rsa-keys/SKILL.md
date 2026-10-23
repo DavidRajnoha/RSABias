@@ -58,13 +58,14 @@ python -I .claude/skills/prepare-rsa-keys/scripts/normalize_keys.py INPUT [INPUT
     [--passphrase-file PASSFILE] [--default-e 65537] [--int-base 16] [--swap-pq]
 ```
 
-Or with the rsabias Docker image. Mount the keys read-only:
+Or with the rsabias Docker image (`docker build -t rsabias .`). Mount the keys read-only, run as your own user, and create the output directory first: Docker creates a missing one owned by root and the script then cannot write into it.
 
 ```bash
-docker run --rm --entrypoint python \
+mkdir -p /path/to/out
+docker run --rm --entrypoint python --user "$(id -u):$(id -g)" \
     -v "$PWD/.claude/skills/prepare-rsa-keys/scripts:/s:ro" \
     -v "/path/to/keys:/in:ro" -v "/path/to/out:/out" \
-    [-v "$HOME/.keypass:/pass:ro"] rsabias:esorics2020 -I /s/normalize_keys.py /in -o /out [--passphrase-file /pass]
+    [-v "$HOME/.keypass:/pass:ro"] rsabias -I /s/normalize_keys.py /in -o /out [--passphrase-file /pass]
 ```
 
 Inputs can be files or directories (searched recursively). Files with several PEM blocks, JWKS sets and JSON lines produce one key per entry.

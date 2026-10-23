@@ -32,13 +32,22 @@ In Claude Code, `rsa-key-analyst` is a subagent that has the `prepare-rsa-keys` 
   - `features.py`: feature transformations;
   - `classifier.py`: the `ProbaTable`, `Classifier` and `Evaluator` classes;
   - `dataset.py`: dataset readers and writers with `meta.json` descriptors.
-- `rsabias/model/`: the shipped model (`classification_table_complex.pkl`), `groups/groups.json`, `precision_recall.json`, `transformations/`, `distributions/`.
+- `rsabias/model/`: the shipped model (`classification_table_complex.npz`; the `.pkl` original only loads with the 2020 dependencies), `groups/groups.json`, `precision_recall.json`, `transformations/`, `distributions/` (the per-source distributions the model was built from).
 - `datasets/baby_dataset/`: small labelled sample keys, gzipped JSON lines with hex values.
 - `datasets/BatchGCD-primes-only/`: single primes from GCD-factorable TLS keys.
+- `tests/`: golden tests that compare the tasks with outputs recorded in the 2020 environment.
+- `tools/convert_model.py`: converts pickled classification tables to `.npz`.
+- `pyproject.toml`, `uv.lock`, `Dockerfile`: packaging for Python 3.11+ with current dependencies.
 
 ## Running
 
-Use an environment where `python -c "import rsabias.core.tasks"` succeeds (install per the README; the pinned dependencies are old). If a Docker image `rsabias:esorics2020` exists (`docker images rsabias`), it works: its entrypoint is `python -m rsabias.cli`.
+- Local: `pip install .` (Python 3.11+) or `uv sync`, then `rsabias -a <task> ...`. Check with `rsabias -h`.
+- Docker: `docker images rsabias` shows whether the image is built (`docker build -t rsabias .`). Its entrypoint is `rsabias` and its working directory `/work`. Mount inputs and outputs, pass `--user "$(id -u):$(id -g)"`, and create output directories on the host first, otherwise Docker creates them owned by root and the tool cannot write into them.
+- The environment of the paper (Python 3.7, the 2020 dependencies) is built from the tag `esorics2020-env`, see the README. It is only needed to reproduce results bit for bit or to regenerate the golden tests.
+
+## Changing code
+
+Run `uv run pytest` (add `-m "not slow"` to skip the pipeline tests). The golden outputs in `tests/golden` must not be regenerated in the current environment: they are the reference that shows the current dependencies reproduce the 2020 results.
 
 ## Known pitfalls in the current code
 
@@ -48,3 +57,5 @@ Use an environment where `python -c "import rsabias.core.tasks"` succeeds (insta
 - `evaluate` ignores `-l` and always runs the labelled accuracy evaluation. There is no CLI path for classifying an unlabelled batch.
 - `batch_gcd` reads a hardcoded placeholder path (`see/comment/above` in `Evaluator.init_batch_dictionary`).
 - The cross-feature classifier described in the paper cannot be selected from the CLI (`-m` accepts `complex` or `naive`).
+- `classify`, `evaluate` and `group` fail with a traceback when the `-o` directory does not exist (`dist` creates it).
+- The model only knows sources collected until 2020. Keys from newer libraries are still assigned a group; OpenSSL 3, for example, does not land in the OpenSSL group 24.
