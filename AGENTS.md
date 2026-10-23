@@ -36,7 +36,8 @@ In Claude Code, `rsa-key-analyst` is a subagent that has the `prepare-rsa-keys` 
 - `datasets/baby_dataset/`: small labelled sample keys, gzipped JSON lines with hex values.
 - `datasets/BatchGCD-primes-only/`: single primes from GCD-factorable TLS keys.
 - `tests/`: golden tests that compare the tasks with outputs recorded in the 2020 environment.
-- `tools/convert_model.py`: converts pickled classification tables to `.npz`.
+- `tools/`: `summarize_classification.py` (combines `classify` reports of keys from one source), `pem2dataset.py` (PEM keys to a dataset with `meta.json`), `compare_dist.py` (compares two `dist.json`), `convert_model.py` (pickled classification tables to `.npz`).
+- `docs/guide.md`: walkthroughs for testing one's own key generation; `work/` (git-ignored) is its working directory for keys and outputs.
 - `pyproject.toml`, `uv.lock`, `Dockerfile`: packaging for Python 3.11+ with current dependencies.
 
 ## Running

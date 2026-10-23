@@ -4,6 +4,15 @@ Python tool for black-box analysis of RSA key generation in cryptographic librar
 
 Using this project, you can audit the origin of your RSA private key. Also, it is possible to replicate our work and analyze large datasets of keys. Beware that when classifying one key, the process is not bulletproof, as our model achieves 47.7% accuracy (on 26 classes) on average.
 
+What the tool can and cannot tell:
+
+- It needs **private** keys: the features are computed from the primes `p` and `q`.
+- The answer is one of **26 groups** of sources whose keys are indistinguishable, not a single library version ([groups.json](rsabias/model/groups/groups.json)).
+- One key is classified correctly in 47.7% of cases on average; 10 keys from one source in about 89%.
+- The model knows the 70 sources collected until 2020. Keys of other or newer implementations are still assigned the closest group; OpenSSL 3, for example, does not land in the OpenSSL group 24. Comparing distributions ([Comparing key sets](#comparing-key-sets)) shows such differences directly.
+
+For a step-by-step introduction to testing your own key generation, see the [guide](docs/guide.md).
+
 ## Install
 
 The tool requires Python 3.11 or newer. Since the stable part of the code is tied to the experimental part, this package is not distributed on PyPI; install it from a clone:
@@ -117,17 +126,74 @@ for f in keys/*.pem; do n=$(basename "$f" .pem); mkdir -p "reports/$n"; rsabias 
 python tools/summarize_classification.py reports/*/key_classification.json
 ```
 
-To use your own keys with the dataset tasks (`dist`, `group`, `build`, `evaluate`), pack them into a dataset with [tools/pem2dataset.py](tools/pem2dataset.py). It writes the keys and a `meta.json` with the source name and version; `--group` sets the group they are assumed to come from, which `evaluate` needs:
+### Your keys as a dataset
+
+The dataset tasks (`dist`, `group`, `build`, `evaluate`) read directories with a `meta.json` that describes the source and lists the key files. [tools/pem2dataset.py](tools/pem2dataset.py) creates one from PEM files; `--group` sets the group the keys are assumed to come from, which `evaluate` needs:
 
 ```bash
 python tools/pem2dataset.py mykeys/openssl3 OpenSSL 3.5.3 keys/*.pem --group 24
+```
+
+Without the tool, concatenate the PEM files into one file and write the `meta.json` yourself, with `"format": "pem"` and the number of keys in `records` (`evaluate` needs it):
+
+```json
+{
+  "type": "reference",
+  "files": [{"name": "keys.pem", "records": 30}],
+  "details": {"category": "Library", "name": "OpenSSL", "version": "3.5.3", "bitlen": 2048,
+              "format": "pem", "compressed": false, "fips_mode": false, "group": "24"}
+}
+```
+
+The other supported formats (JSON lines, CSV, ...) and the `meta.json` fields are described with the [baby dataset](datasets/baby_dataset/readme.md).
+
+### Comparing key sets
+
+`dist` counts how often every combination of feature values occurs in a dataset (about 5 minutes per million keys) and writes a `dist.json` per source. [tools/compare_dist.py](tools/compare_dist.py) compares two of them: per feature the share of every value, the difference in percentage points and a chi-square test, then the combinations that differ most. Either side can be a directory, whose distributions are summed, e.g. a library in [rsabias/model/distributions](rsabias/model/distributions), which holds the distributions of all sources of the model:
+
+```bash
 rsabias -a dist -i mykeys -o dist_out -t rsabias/model/transformations/5p_5q_blum_mod_roca.json
+python tools/compare_dist.py rsabias/model/distributions/Library/OpenSSL/1.1.0e/2048/dist.json dist_out
+```
+
+To see which known sources are closest, run `group` on your distributions together with a copy of `rsabias/model/distributions`; see the [guide](docs/guide.md#6-walkthrough-3-compare-key-sets).
+
+### Evaluating keys against a group
+
+`evaluate` measures how well the model recognises the keys of each dataset as the group named in its `meta.json`, alone and in batches of 10, 20, 30 and 100 keys of one source. Results are summed per group, not per dataset, and every key is classified once per batch size (about 3.5 ms each):
+
+```bash
+mkdir -p eval_out
 rsabias -a evaluate -i mykeys -o eval_out -t rsabias/model/transformations/5p_5q_blum_mod_roca.json -g rsabias/model/groups/groups.json -c rsabias/model
 ```
+
+It writes `n_<batch size>_results.json`, which counts per true group whether it came first, among the first two or among the first three (`{"n_keys": ..., "accuracies": {"1"|"2"|"3": {group: {"correct", "wrong"}}}}`), and `confusion_matrix.{txt,png,pkl}` for single keys. [scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) reads this directory and compares two evaluations in an HTML report; see the [guide](docs/guide.md#7-walkthrough-4-evaluate-your-keys-against-a-known-group).
+
+### Tools
+
+| Script | Purpose |
+|---|---|
+| [tools/summarize_classification.py](tools/summarize_classification.py) | Combines the `classify` reports of keys from one source |
+| [tools/pem2dataset.py](tools/pem2dataset.py) | Packs PEM private keys into a dataset with a `meta.json` |
+| [tools/compare_dist.py](tools/compare_dist.py) | Compares two `dist.json` files, or directories of them |
+| [tools/convert_model.py](tools/convert_model.py) | Converts a pickled classification table of 2020 to `.npz` (legacy environment only) |
+
+The scripts run with the dependencies of the tool; in Docker, use `--entrypoint python`.
 
 ### Advanced usage
 
 A bunch of distinct tasks is available for full analysis of the RSA keys. This section of the readme is not meant to be self-contained, but rather provide guidance. The user will most probably need to dive into the code when aiming for the replication of the experiment. A list of available tasks with short description follows (with the assumption that the user is acknowledged with our paper). The exact list of expected parameters for each of the tasks can be simply read out from the [cli.py](https://github.com/crocs-muni/RSABias/blob/master/rsabias/cli.py). The tasks are presented in the order that leads to experiment replication.
+
+How the tasks fit together:
+
+```
+datasets ──dist──► distributions ──group──► groups
+   │                                          │
+   └──split──► train ─────────build───────────┴──► model ──classify──► group of one key
+               test ──filter──► evaluate ───────────────────────────► accuracy per group
+```
+
+`classify`, `evaluate` and `group` require the output directory (`-o`) to exist; `dist` and `convert` create it.
 
 - `convert` -  Since we internally support multiple formats of the datasets, this task is capable of converting between the formats (csv -> json, enabling compression, etc.)
 - `dist+plot` - Computes the exact distribution of the selected features on a whole dataset (a `dist.json` per source). Out of these features, labels for the dataset are constructed. This task also plots heat maps of the distributions, for sources whose observed feature values are few enough to draw. The two halves are also available separately as `dist` and `plot`.
@@ -181,6 +247,16 @@ We present a further description of the utilized data structures (groups, featur
 Classification tables are stored as `.npz` files with plain arrays (probabilities per group, feature coordinates, group names), which load with any numpy version and without unpickling. The shipped model is [classification_table_complex.npz](rsabias/model/classification_table_complex.npz). `build` writes each table both as `.npz` and as a legacy `.pkl`; loading prefers the `.npz` and falls back to the `.pkl`.
 
 The original model of the paper, [classification_table_complex.pkl](rsabias/model/classification_table_complex.pkl), is a pickle that only loads with the dependency versions of 2020. It was converted losslessly with [tools/convert_model.py](tools/convert_model.py) in the legacy environment; convert your own pickled tables from that time the same way. Tables built before the feature names `lsb` and `modularFingerprint` were corrected are relabelled automatically on load.
+
+## Known limitations
+
+- The model only knows sources collected until 2020 (see the top of this file).
+- `classify` takes one key per run and opens it as text, so DER files fail; encrypted keys fail too; OpenSSH keys come out with `p` and `q` swapped. See [Supported key formats](#supported-key-formats).
+- `classify`, `evaluate` and `group` fail with a traceback when the output directory does not exist.
+- `evaluate` cannot classify an unlabelled set of keys: every dataset needs a group from the groups file, and `-l` is ignored.
+- `group` prints the groups instead of saving them; `dist+plot` draws nothing when the feature space is too large to plot, which includes the model's transformation.
+- `batch_gcd` needs a placeholder path replaced in the code and a single-prime model that is not in the repository.
+- The cross-feature classifier from the paper cannot be selected from the CLI.
 
 ## Dataset
 
