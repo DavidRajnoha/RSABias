@@ -2,7 +2,7 @@
 
 This guide shows how to use RSABias to examine RSA keys produced by your own key generation: which known library or device they resemble, whether two sets of keys differ, and whether your keys show anomalies compared with the datasets the tool was built from.
 
-The [README](../README.md) is the reference for every command and option. This guide is a set of walkthroughs.
+This guide is a set of walkthroughs; the reference for every command and option is the [README](../README.md).
 
 ## 1. What RSABias does
 
