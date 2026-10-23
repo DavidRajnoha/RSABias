@@ -1,6 +1,6 @@
 # RSABias: a practical guide for testing RSA key generation
 
-This guide shows how to use RSABias to examine RSA keys produced by your own key generation: which known library or device they resemble, whether two sets of keys differ, and whether your keys show anomalies compared with the datasets the tool was built from. It is written for the first round of testing; where a step has known limitations, they are listed, together with what to report back to us so that we know what to improve.
+This guide shows how to use RSABias to examine RSA keys produced by your own key generation: which known library or device they resemble, whether two sets of keys differ, and whether your keys show anomalies compared with the datasets the tool was built from.
 
 The [README](../README.md) is the reference for every command and option. This guide is a set of walkthroughs.
 
@@ -92,10 +92,10 @@ Key formats: the file must hold one unencrypted RSA private key in PEM (PKCS#1 o
 ```bash
 openssl rsa -inform DER -in key.der -out key.pem              # DER
 openssl rsa -in encrypted.pem -out key.pem                    # remove a passphrase
-cp id_rsa key.pem && ssh-keygen -p -m PEM -N "" -f key.pem    # OpenSSH
+cp id_rsa key.pem && ssh-keygen -p -m PEM -N "" -f key.pem    # OpenSSH format
 ```
 
-Do not classify OpenSSH keys directly: they are read with p and q swapped, which changes the result without an error.
+Do not classify OpenSSH-formatted keys directly: they are read with p and q swapped, which changes the result without an error.
 
 ## 5. Walkthrough 2: which known source do my keys resemble?
 
@@ -120,48 +120,50 @@ Reading it:
 
 Each `classify` run takes a few seconds, so this suits up to a few hundred keys. For large sets, use walkthrough 3.
 
-**Without the tool:** the combined score of a group is the sum of the logarithms of its scores over all reports:
-
-```bash
-rsabias-python -c '
-import json, math, sys
-reports = [json.load(open(p)) for p in sys.argv[1:]]
-log = {g: sum(math.log(r[g]["score"]) if r[g]["score"] > 0 else -math.inf for r in reports) for g in reports[0]}
-for g in sorted(log, key=log.get, reverse=True)[:3]: print(g, log[g], reports[0][g]["sources"])
-' work/w2/*/key_classification.json
-```
-
 ## 6. Walkthrough 3: compare key sets
 
 This is the main tool for comparing two sets of your keys (for example two versions of your library), or your keys with the sources the model was built from. It works with any number of keys: `dist` processes about 1 million keys in 5 minutes.
 
 ### Step 1: pack the keys into a dataset
 
-The dataset tasks read a directory with a `meta.json` that describes the source, and a key file. `tools/pem2dataset.py` creates both from PEM files:
+`dist` does not read loose key files but datasets. A dataset is a directory with the keys of one source in a key file (here a concatenation of PEM keys) and a `meta.json` that describes the source (category, name, version, key length) and lists the key files with their number of keys:
 
-```bash
-rsabias-python tools/pem2dataset.py work/datasets/v1/mylib-v1 MyLib 1.0 work/keys-v1/*.pem
-rsabias-python tools/pem2dataset.py work/datasets/v2/mylib-v2 MyLib 2.0 work/keys-v2/*.pem
-```
-
-Arguments: output directory, source name, version, key files. It skips files it cannot read and keys of a different length than the first, with a warning. For very many keys, the shell may refuse a long `*.pem` list; pass a directory listing in parts or use the alternative below.
-
-**Without the tool:** concatenate the PEM files and write `meta.json` by hand:
-
-```bash
-mkdir -p work/datasets/v1/mylib-v1
-cat work/keys-v1/*.pem > work/datasets/v1/mylib-v1/keys.pem
-cat > work/datasets/v1/mylib-v1/meta.json <<'EOF'
+```json
 {
   "type": "reference",
   "files": [{"name": "keys.pem", "records": 1000000}],
   "details": {"category": "Library", "name": "MyLib", "version": "1.0", "bitlen": 2048,
               "format": "pem", "compressed": false, "fips_mode": false}
 }
-EOF
 ```
 
-`records` must be the number of keys. Other key file formats (JSON lines, CSV) are described in [datasets/baby_dataset/readme.md](../datasets/baby_dataset/readme.md).
+`dist` searches its input directory for all `meta.json` files, so one input directory can hold several sources. Other key file formats (JSON lines, CSV) are described in [datasets/baby_dataset/readme.md](../datasets/baby_dataset/readme.md).
+
+`tools/pem2dataset.py` creates a dataset from PEM files. Arguments: output directory, source name, version, key files:
+
+```bash
+rsabias-python tools/pem2dataset.py work/datasets/v1/mylib-v1 MyLib 1.0 work/keys-v1/*.pem
+rsabias-python tools/pem2dataset.py work/datasets/v2/mylib-v2 MyLib 2.0 work/keys-v2/*.pem
+```
+
+It skips files it cannot read and keys of a different length than the first, with a warning.
+
+Or create it with the following script, which also works when there are too many keys for one `*.pem` argument list. Set the source details and the key length in `meta.json` to your keys:
+
+```bash
+src=work/keys-v1; out=work/datasets/v1/mylib-v1
+mkdir -p "$out"
+find "$src" -name '*.pem' -exec cat {} + > "$out/keys.pem"
+n=$(grep -c -- '-----BEGIN .*PRIVATE KEY-----' "$out/keys.pem")
+cat > "$out/meta.json" <<EOF
+{
+  "type": "reference",
+  "files": [{"name": "keys.pem", "records": $n}],
+  "details": {"category": "Library", "name": "MyLib", "version": "1.0", "bitlen": 2048,
+              "format": "pem", "compressed": false, "fips_mode": false}
+}
+EOF
+```
 
 ### Step 2: compute the distributions
 
@@ -214,74 +216,17 @@ rsabias -a group -i work/cluster/in -o work/cluster/out -t $TRANS > work/cluster
 
 ### Limitations
 
-- `compare_dist.py` is text only. A visual comparison of two distributions in scrutiny-viz is planned.
+- `compare_dist.py` is text only. A visual comparison of two distributions is on the potential roadmap of [scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz).
 - `group` prints its groups instead of saving them, and its dendrogram file has a long, generated name.
 - `dist+plot` draws nothing for the model's transformation (its feature space is too large to plot).
 
-## 7. Walkthrough 4: evaluate your keys against a known group
+## 7. Advanced usage
 
-`evaluate` measures how well the model recognises keys as coming from a group you name. Use it when you expect your keys to behave like a known source, for example because your implementation builds on a library in the model, or because walkthrough 2 pointed to one: if the model recognises your keys as that group about as well as the original source's own keys, your keys are consistent with it; if not, they deviate.
+The walkthroughs above look at your keys: `classify` scores them against the model, and `dist`, `compare_dist.py` and `group` compare the feature distributions of your key set directly with other key sets. The remaining tasks take a different approach and are documented in the [README](../README.md#advanced-usage) and the code rather than here.
 
-scrutiny-viz then compares two evaluations, for example the original source against your keys, and renders the differences as an HTML report.
+**Evaluating the model.** `evaluate` does not describe keys; it measures the model. It takes keys whose true group is known (the ground truth, `group` in each `meta.json`), classifies them alone and in batches of 10 to 100 keys, and counts how often the model names the true group. The paper used it to measure the accuracy of the model on the test part of the dataset. Run on your keys labelled with the group you expect, it shows how well the classification built into the model recognises them as that group. This differs from comparing with `dist`: it does not compare your keys with other keys, only with the model's 26 groups, so a difference in the features shows only where it changes the classification. It is also slow (about 5 hours per million keys). [scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) visualises `evaluate` outputs and compares two evaluations; see [Evaluating keys against a group](../README.md#evaluating-keys-against-a-group) in the README.
 
-### What evaluate does
-
-| | |
-|---|---|
-| Input `-i` | a directory searched for `meta.json` files, each a dataset of **private** keys. Each `meta.json` must name the true group in `details.group` |
-| `-t`, `-g`, `-c` | the transformation, groups file and model directory: `$TRANS`, `$GROUPS_JSON`, `$MODEL` |
-| Output `-o` | an existing directory |
-| Processing | For batch sizes 1, 10, 20, 30 and 100: cut each dataset into consecutive batches, combine the scores within a batch, and count whether the true group is the first, among the first two, or among the first three |
-| `n_<size>_results.json` | `{"n_keys": size, "accuracies": {"1"/"2"/"3": {group: {"correct", "wrong"}}}}` |
-| `confusion_matrix.txt`, `.png`, `.pkl` | for single keys: where the keys of each true group were classified |
-
-Results are summed per group, not per dataset, so evaluate the two sets you want to compare **in separate runs**. `evaluate` classifies every key five times (once per batch size), about 3.5 ms each: about 5 hours for 1 million keys. A sample of 100,000 keys is enough.
-
-### Step 1: label and evaluate your keys
-
-Pick the group you expect, e.g. 24 for OpenSSL (`rsabias/model/groups/groups.json` lists the sources of every group):
-
-```bash
-rsabias-python tools/pem2dataset.py work/eval-in/mine/mylib MyLib 1.0 work/keys-sample/*.pem --group 24
-mkdir -p work/eval-out/mine
-rsabias -a evaluate -i work/eval-in/mine -o work/eval-out/mine -t $TRANS -g $GROUPS_JSON -c $MODEL
-```
-
-Without the tool, add `"group": "24"` to `details` in a hand-written `meta.json` (walkthrough 3).
-
-### Step 2: evaluate the reference
-
-The reference is a source of that group from our dataset of 160 million keys ([download](https://owncloud.cesnet.cz/index.php/s/Ihhw3BKKzKTaxB9); take only the source you need). Add `"group": "24"` to the `details` of its `meta.json`, take a sample of comparable size, and evaluate it the same way into `work/eval-out/reference`.
-
-### Step 3: compare in scrutiny-viz
-
-[scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) is a separate tool (Python 3.13); install it per its README. From its directory:
-
-```bash
-R=/path/to/RSABias/work/eval-out
-python scrutinize.py map -t rsabias --folder $R/reference -o results/reference.json
-python scrutinize.py map -t rsabias --folder $R/mine -o results/mine.json
-python scrutinize.py verify -s scrutiny/schemas/RSABiasEval.yml -r results/reference.json -p results/mine.json -o results/verify.json
-python scrutinize.py report -p results/verify.json -o mylib.html
-```
-
-The report shows, per batch size, the accuracy of each group for both evaluations and the difference, the most frequent misclassifications, and the confusion matrix as a heatmap.
-
-### Known limitations
-
-This combination is new, and we expect some of it not to work for your data. Please report what you run into; the right column says what helps us most.
-
-| Limitation | Effect | Please report |
-|---|---|---|
-| The accuracy in the report mixes three measures: true group first, among the first two, among the first three | The percentages are higher than the top-1 accuracy | Whether you need top-1 only, or all three side by side |
-| Heatmap rows and columns are matrix positions, not group numbers; position i is the i-th group in text order (1, 10, 11, ..., 19, 2, 20, ...) | Hard to read the heatmap; `confusion_matrix.txt` in the evaluate output has the real group numbers | Whether the heatmap is useful to you at all |
-| The confusion matrix is read from a Python pickle | Only open evaluate outputs you produced yourself | Any loading errors with the versions you use |
-| Groups without keys produce empty (NaN) rows, which the report drops | Only groups present in the input appear | |
-| `report` writes into scrutiny-viz's `results/` directory, whatever path `-o` names | Look for the HTML and a zip there | |
-| `evaluate` speed | Hours for millions of keys | The sample sizes you needed and the run times you saw |
-| `evaluate` needs a group from the model | Keys of an unknown implementation cannot be evaluated as themselves | Whether you need this (see below) |
-
-It is also possible to add your own implementation as a new group (train the model on one set of your keys and evaluate the others against it). This is not covered by this guide; contact us if you need it.
+**Building a model.** The model was built by computing the distributions of all sources (`dist`), clustering them into groups (`group`), and building the classification tables from a training part of the dataset (`split`, `filter`, `build`), see the pipeline in the README. Adding your own implementation as a new group means repeating these steps with your keys added; contact us if you need it.
 
 ## 8. Interpreting results
 

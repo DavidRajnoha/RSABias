@@ -167,7 +167,18 @@ mkdir -p eval_out
 rsabias -a evaluate -i mykeys -o eval_out -t rsabias/model/transformations/5p_5q_blum_mod_roca.json -g rsabias/model/groups/groups.json -c rsabias/model
 ```
 
-It writes `n_<batch size>_results.json`, which counts per true group whether it came first, among the first two or among the first three (`{"n_keys": ..., "accuracies": {"1"|"2"|"3": {group: {"correct", "wrong"}}}}`), and `confusion_matrix.{txt,png,pkl}` for single keys. [scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) reads this directory and compares two evaluations in an HTML report; see the [guide](docs/guide.md#7-walkthrough-4-evaluate-your-keys-against-a-known-group).
+It writes `n_<batch size>_results.json`, which counts per true group whether it came first, among the first two or among the first three (`{"n_keys": ..., "accuracies": {"1"|"2"|"3": {group: {"correct", "wrong"}}}}`), and `confusion_matrix.{txt,png,pkl}` for single keys.
+
+[scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) reads this directory and compares two evaluations, e.g. a reference source of the group against your keys, in an HTML report. From its directory:
+
+```bash
+python scrutinize.py map -t rsabias --folder /path/to/eval_reference -o results/reference.json
+python scrutinize.py map -t rsabias --folder /path/to/eval_out -o results/mine.json
+python scrutinize.py verify -s scrutiny/schemas/RSABiasEval.yml -r results/reference.json -p results/mine.json -o results/verify.json
+python scrutinize.py report -p results/verify.json -o mine.html
+```
+
+The report currently sums the top-1, top-2 and top-3 counts into one accuracy, labels the confusion matrix heatmap by matrix position instead of group number, and is written into scrutiny-viz's `results/` directory regardless of `-o`.
 
 ### Tools
 
