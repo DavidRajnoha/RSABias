@@ -180,14 +180,15 @@ Each source gets a `dist.json` with the count of every combination of feature va
 rsabias-python tools/compare_dist.py work/dist-v1 work/dist-v2
 ```
 
-For each feature, it prints the share of every value in both sets, the difference in percentage points, and a chi-square test; then the total variation distance over all features together, the combinations that differ most, and combinations seen in only one set. An excerpt, comparing OpenSSL 1.1.0e keys with OpenSSL 3 keys:
+For each feature, it prints the share of every value in both sets, the difference in percentage points, and a chi-square test; then the total variation distance over all features together, the combinations that differ most, and combinations seen in only one set. An excerpt, comparing the model's 100,000 OpenSSL 1.1.0e keys with 1,000 OpenSSL 3.5.3 keys:
 
 ```
 modular fingerprint (chi-square p = 0)
      value      A %      B %    B-A pp
-         1     0.00    90.00    +90.00
-         5     0.00     6.67     +6.67
-     17863   100.00     3.33    -96.67
+         1     0.00    84.80    +84.80
+         5     0.00    13.00    +13.00
+       251     0.00     1.60     +1.60
+     17863   100.00     0.60    -99.40
 ```
 
 Reading it: with many keys, even negligible differences are statistically significant, so judge them by the size in percentage points. For scale, OpenSSL 1.1.0e keys of 1024 and 2048 bits, which come from the same implementation, differ by a total variation distance of 1.2 pp.
