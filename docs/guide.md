@@ -33,7 +33,6 @@ Everything in this guide runs on your machines; private keys never need to leave
 |---|---|
 | `dist.json` and `meta.json` from `dist` (counts of feature values) | key files, `keys.json` dataset files |
 | `evaluate` outputs (`n_*_results.json`, `confusion_matrix.*`) | anything containing p, q, d or n |
-| scrutiny-viz reports | |
 | `key_classification.json` reports (scores per group, no key material) | |
 
 Work on copies of the keys, never on the originals.
@@ -225,7 +224,7 @@ rsabias -a group -i work/cluster/in -o work/cluster/out -t $TRANS > work/cluster
 
 The walkthroughs above look at your keys: `classify` scores them against the model, and `dist`, `compare_dist.py` and `group` compare the feature distributions of your key set directly with other key sets. The remaining tasks take a different approach and are documented in the [README](../README.md#advanced-usage) and the code rather than here.
 
-**Evaluating the model.** `evaluate` does not describe keys; it measures the model. It takes keys whose true group is known (the ground truth, `group` in each `meta.json`), classifies them alone and in batches of 10 to 100 keys, and counts how often the model names the true group. The paper used it to measure the accuracy of the model on the test part of the dataset. Run on your keys labelled with the group you expect, it shows how well the classification built into the model recognises them as that group. This differs from comparing with `dist`: it does not compare your keys with other keys, only with the model's 26 groups, so a difference in the features shows only where it changes the classification. It is also slow (about 5 hours per million keys). [scrutiny-viz](https://github.com/crocs-muni/scrutiny-viz) visualises `evaluate` outputs and compares two evaluations; see [Evaluating keys against a group](../README.md#evaluating-keys-against-a-group) in the README.
+**Evaluating the model.** `evaluate` does not describe keys; it measures the model. It takes keys whose true group is known (the ground truth, `group` in each `meta.json`), classifies them alone and in batches of 10 to 100 keys, and counts how often the model names the true group. The paper used it to measure the accuracy of the model on the test part of the dataset. Run on your keys labelled with the group you expect, it shows how well the classification built into the model recognises them as that group. This differs from comparing with `dist`: it does not compare your keys with other keys, only with the model's 26 groups, so a difference in the features shows only where it changes the classification. It is also slow (about 5 hours per million keys). See [Evaluating keys against a group](../README.md#evaluating-keys-against-a-group) in the README.
 
 **Building a model.** The model was built by computing the distributions of all sources (`dist`), clustering them into groups (`group`), and building the classification tables from a training part of the dataset (`split`, `filter`, `build`), see the pipeline in the README. Adding your own implementation as a new group means repeating these steps with your keys added; contact us if you need it.
 
